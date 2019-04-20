@@ -23,15 +23,16 @@ const {
       cozyClient    ,
       saveFiles
 }                      = require('cozy-konnector-libs'),
-      // parseArticle     = require('./article-parser/parser'),
-      // sanitizeFileName = require('sanitize-filename'),
+      parseArticle     = require('./article-parser/parser2'),
+      sanitizeFileName = require('sanitize-filename'),
       moment           = require('moment'),
+      Promise          = require('bluebird'),
       // pdfPrinter       = require('./pdf-printer'),
       parsePurchase    = require('./purchase-parser/purchase-parser'),
       parseInvoices    = require('./purchase-parser/invoices-parser')
 
 const baseUrl                        = 'http://abonnes.lemonde.fr'
-const ARTICLE_DOWNLOADS_CONCURRENCY  = 5          // TODO adapt for production
+const ARTICLE_DOWNLOADS_CONCURRENCY  = 5
 let   invoicesTable                  = []         // a global variable to ease the different treatments on the table
 let   NUMBER_OF_ARTICLES_TO_RETRIEVE = 1000000000
 var   USER_ID                                     // static ID for the session
@@ -67,10 +68,10 @@ async function start(fields) {
   log('info', 'Successfully logged in')
 
   log('info', 'Fetching the invoices')
-  await retriveInvoices()
+  // await retriveInvoices()
 
   log('info', 'Fetching the articles')
-  // await retriveArticles()
+  await retriveArticles()
 
 }
 
@@ -205,6 +206,7 @@ function saveInvoices(purchases) {
 
       // TODO : deduplicate & save the invoice in Cozy linkBankOperations ?
       // is it better to prepare all bills and do a single saveBills ?
+      // how does saveBills deduplicate ?
       const bill = {
         type      : 'media'              ,
         vendor    : 'LeMonde'            ,
@@ -244,54 +246,80 @@ function retriveArticles() {
   })
 
   // a) get list of bookmarked article
-  return request({
-    uri: `http://www.lemonde.fr/sfuser/sfws/user/${USER_ID}/classeur/edito/${bookmarksIndexStart}/${bookmarksIndexStop}`,
-  })
-  .then( body => {
-    const bookmarkSessions = body.articles
-    let articlesList = []
-    for (let key in bookmarkSessions) {
-      for (let article of bookmarkSessions[key].articles){
-        article.dateBookmarked = bookmarkSessions[key].dateAddedIso
+  let articlesPromise
+  if (false && DEBUG_MODE) { // for debug, to test a specific article (just change its url)
+    const articleList = [{
+      "id"     : 193860,
+      "title"  : "L’affaire Richard Ferrand résumée en cinq points",
+      "chapo"  : "Alors que les avocats du chef de file des députés LREM demandent le dépaysement de l’instruction, retour sur les grandes lignes du dossier.",
+      "authors": "Alexandre Pouchard",
+      "type"   : "Décryptages",
+      "media"  : "",
+      "url"    : "/big-browser/article/2018/10/11/trois-heures-de-garde-a-vue-pour-avoir-mal-scanne-des-articles-chez-ikea_5368025_4832693.html",
+      "date"   : "2018-03-21T13:06:12.592Z",
+      "dateBookmarked": "2017-10-01T00:00:00+02:00"
+    }]
+      articlesPromise = Promise.resolve(articleList)
+  } else {
+    articlesPromise = request({
+      uri: `http://www.lemonde.fr/sfuser/sfws/user/${USER_ID}/classeur/edito/${bookmarksIndexStart}/${bookmarksIndexStop}`,
+    })
+    .then( body => {
+      const bookmarkSessions = body.articles
+      let articlesList = []
+      for (let key in bookmarkSessions) {
+        for (let article of bookmarkSessions[key].articles){
+          article.dateBookmarked = bookmarkSessions[key].dateAddedIso
+        }
+        articlesList = articlesList.concat(bookmarkSessions[key].articles)
       }
-      articlesList = articlesList.concat(bookmarkSessions[key].articles)
-    }
-    if (DEBUG_MODE) {
-      console.log("on écrit la liste des articles dans :", ARTICLES_LIST_PATH, '\n' + JSON.stringify(articlesList))
-      require('fs').writeFile(ARTICLES_LIST_PATH,`number of articles = ${articlesList.length}\n` + JSON.stringify(articlesList), ()=>{})
-    }
-    // TODO : deduplicates already downloaded articles (on article.id ?)
-    return articlesList;
-  })
+      if (DEBUG_MODE) {
+        console.log("on écrit la liste des articles dans :", ARTICLES_LIST_PATH)
+        require('fs').writeFile(ARTICLES_LIST_PATH,`number of articles = ${articlesList.length}\n` + JSON.stringify(articlesList), ()=>{})
+      }
+      // TODO : deduplicates already downloaded articles (on article.id ?)
+      return articlesList
+    })
+  }
 
   // b) retrieve articles content
-  .map(article=>{
+  // article content :
+  //     {
+  //       title          : 'Un décès sur cinq dans le monde dû à une mauvaise alimentation',
+  //       chapo          : 'Une vaste étude évalue l’impact sanitaire d’un régime alimentaire déséquilibré',
+  //       authors        : 'Paul BenkimounMathilde Gérard',
+  //       type           : 'Enquête',
+  //       media          : '',
+  //       url            : 'http://abonnes.lemonde.fr/planete/article/2019/04/04/un-deces...',
+  //       date           : '2019-04-04T13:03:19.100Z',
+  //       dateBookmarked : '2019-04-01T00:00:00+02:00',
+  //       baseUrl        : 'http://abonnes.lemonde.fr',
+  //       rawHtml        : {text}
+  //       html$          : {cheerio object}
+  //       filename       : '2019-04-04 - Un décès sur cinq dans le monde dû à une mauvaise alimentation',
+  //       inlinedHtml    :
+  //     }
+  return articlesPromise
+  .map(article => {
     if (article.url !== null) {
       article.baseUrl = baseUrl
       article.url = `${baseUrl}${article.url}`
     }
     console.log('we retrieve :"' + article.url + '"');
-    // // prepare the filename of the article TODO move further
-    // {
-    //   let dateArt = moment(article.date)
-    //   dateArt = dateArt.format('YYYY-MM-DD') + ' - '
-    //   article.filename = sanitizeFileName( dateArt + article.title)
-    // }
     // prepare the promise to get the article content
     let getArticlePromise
-    if (article.url) {
-      getArticlePromise  = requestFactory({jar: true, json: false, cheerio: true})({uri: article.url})
-    }else {
+    if (!article.url) {
       // for some nUnknown reasons, article.url may equal null ... even in the web page of LeMonde, the corresponding
       // bookmarked article has no link... looks like a bug in LeMonde.
       getArticlePromise = Promise.resolve('')
+    }else {
+      getArticlePromise = requestFactory({jar: true, json: false, cheerio: true})({uri: article.url})
     }
     return getArticlePromise
 
-    // c) sanitize hml to get pdfDefinition
+    // c) sanitize HTML and inline its assets
     .then( html$ => {
       article.rawHtml = html$.html()
-      article.inlinedHtml = 'inlined html'
       article.html$ = html$
       article.filename = sanitizeFileName( moment(article.date).format('YYYY-MM-DD') + ' - ' + article.title)
       if (html$ === '') {
@@ -303,69 +331,50 @@ function retriveArticles() {
     })
     .catch(err=>{
       // sanitization went wrong
-      article.pdfDefinition = null
       log('error', err.toString())
       return article
     })
 
-    // d) save the pdf
+    // d) save the article
     .then( (article) => {
       if (article.url !== null) {
         if (DEBUG_MODE) {
           /*
           Only for test : store html file in ARTICLES_HTML_PATH
-          So that we can test and adjust the pdf production
+          So that we can test and adjust the html of the article
           */
           let filename = ARTICLES_HTML_PATH + article.filename
-          console.log('DEBUG : save article file :', filename +'.html')
+          console.log('DEBUG : save article file :', filename +'.html', article.url)
           const fs = require('fs')
-          fs.writeFile(filename+'.html', article.html$.html(), ()=>{})
-          fs.writeFile(filename+'.url', article.url, ()=>{})
+          fs.writeFileSync(filename+'.html', article.inlinedHtml, ()=>{})
+          fs.writeFileSync(filename+'.url', article.url, ()=>{})
         }
-        if (article.pdfDefinition !== null) {
-          const stream = pdfPrinter(article.pdfDefinition)
-          const fileDoc = cozyClient.files.create(stream, {
-            name:article.filename + '.pdf',
-            dirID:'', // TODO
-            contentType:'application/pdf'
-          })
-          stream.end()
-          return fileDoc
-        }
+        // save the html of the
+        const fileDoc = cozyClient.files.create(article.inlinedHtml, {  // TODO deduplicate if article already retrieved (à faire en amont non ?)
+          name        : article.filename + '.html' ,
+          dirID       : ''                        , // TODO
+          contentType : 'text/html'               ,
+        })
+        return fileDoc
       }
     })
-    .catch(err => {
-      console.log(err)
-    })
-    // e) save the article document and the bookmark in Cozy
+    // e) save the bookmark in Cozy
+    // data structure : TODO : choose and implement :-)
+    // option 1 : a bookmark : you bookmark an online article that has a copy in your FS. This copy can be annoted and your bookmark reference both the copy and online versions.
+    // Option 2 : a "bookmark" is a note of a special type that contains an inlined copy of the html. Therefore as a note, it can be easyly augmented.
+    // ==> mon impression : l'article doit être un "marbre", que l'on peut annoter et transformer en note. Potentiellement ce "marbre" peut être ré importer (changement format vidéo, amélioration de l'import...)
     .then(fileDoc => {
-      article.html$ = article.html$.html()
-      article.html$ = 'article.html$.html()'
-      article.fileID = fileDoc._id
-      console.log("============= fileDoc");
-      // console.log(fileDoc);
-      delete article.pdfDefinition
-      // console.log(require('json-truncate')(article,0))
-      // console.log(article);
-      // cozyClient.data.create('bookmark', article)
-      // const bookmark = {
-      //   title:
-      //   bookmarkedDate:
-      //   uri:
-      //   localUri:
-      //   note:
-      //
-      // }
-      // // TODO est ce que l'article dans son cozy ne devrait pas être une note ? avec des méta données supplémentaires ?
-      // // est ce qu'un bookmark en fait n'est pas une note de type particulier ?
-      // const localArticle = {
-      //   title:
-      //   authors:
-      //   type:
-      //   localUri:
-      //   note:
-      //   date:
-      // }
+      console.log("============= fileDoc")  // TODO deduplicate
+      const bookmark = {
+        title          : article.title             ,
+        articleDate    : article.date              ,
+        bookmarkedDate : article.dateBookmarked    ,
+        url            : article.url               ,
+        copyId         : fileDoc._id               ,
+        tags           : '         '               ,
+        note           : ''                        ,
+      }
+      cozyClient.data.create('bookmark', bookmark)
     })
   }, {concurrency:ARTICLE_DOWNLOADS_CONCURRENCY})
 
@@ -376,6 +385,7 @@ function retriveArticles() {
 // /*****************************************
 //   RETRIEVE  ACCOUNT INFORMATION
 // ******************************************/
+// TODO when profile data is ready
 //   .then( () => {
 //     req = requestFactory({
 //       jar : true,
@@ -395,6 +405,7 @@ function retriveArticles() {
 // /*****************************************
 //   RETRIEVE  PERSONAL INFORMATION
 // ******************************************/
+//
 //   .then( () => {
 //     req = requestFactory({
 //       jar : true,

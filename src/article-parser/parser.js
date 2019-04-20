@@ -13,13 +13,27 @@ const
 
 const SELECTORS_TO_REMOVE = '.ea_article, .toolbar, .mgb16, .bandeau_matinale, .dfp_slot, .video_player, SCRIPT, .content-labels'
 
+
+
+
+/* !!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  CURRENTLY NOT USED : we don't store the pdf, but an inlined html version.
+  the files are kept just in case, should be deleted if the choice is validated.
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!  */
+
+
+
+
+
 /*
   MAIN :
   . expects article {html$, baseUrl, url}
     . html$   : the html Cheerio Object
     . baseUrl : a string containing the url to turn relative links into absolute urls
     . url : {string} absolute url to the article
-  . return : a promise returning an article augmented with {pdfDefinition, filename}
+  . return : a promise returning the article augmented with {pdfDefinition}
 */
 
 /*
@@ -37,8 +51,8 @@ module.exports = (article)=>{
 
     /* prepare pdfDefinition of the article */
     const art$ = article.html$('article')
-    // console.log(logElement(art$))
     art$.find(SELECTORS_TO_REMOVE).remove()
+    console.log(logElement(art$))
     const
       headContentData = {
         title:getTitleTemplate(), // the template of the title is in the template
