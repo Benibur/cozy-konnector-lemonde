@@ -7,32 +7,38 @@ let BASE_URL, getStyle
   return a fonction in charge of preparting the text with absolute urls
   based on base_url
  */
-module.exports = function(base_url,getStyleFromdic){
+module.exports = function(base_url, getStyleFromdic) {
   BASE_URL = base_url
   getStyle = getStyleFromdic
   return getDecoredText
 }
 
-
 /*
 Return an array of the text with a /n after each bloc and preserves
 text decoration (bold, italic and links)
 */
-function getDecoredText(node$, doTrimHard = false, initStyles = {bold:false,italics:false,link:false}) {
+function getDecoredText(
+  node$,
+  doTrimHard = false,
+  initStyles = { bold: false, italics: false, link: false }
+) {
   const textNodes = []
 
   /* a) launch a recursion of the children */
-  initStyles = Object.assign({bold:false,italics:false,link:false},initStyles)
-  getDecoratedTextFromChildren(node$, textNodes, initStyles )
+  initStyles = Object.assign(
+    { bold: false, italics: false, link: false },
+    initStyles
+  )
+  getDecoratedTextFromChildren(node$, textNodes, initStyles)
 
   /* b) remove extra carriage returns and concatenate nodes with same newStyles */
   if (textNodes.length === 0) return []
   const result = []
   let previousTxtN = textNodes[0],
-      txtNode,
-      hasAReturn,
-      hasPreviousAReturn
-  result[0]=previousTxtN
+    txtNode,
+    hasAReturn,
+    hasPreviousAReturn
+  result[0] = previousTxtN
   // remove initial \n
   if (doTrimHard) {
     trimHard(previousTxtN)
@@ -56,9 +62,9 @@ function getDecoredText(node$, doTrimHard = false, initStyles = {bold:false,ital
         // else append the return to previousTxtN
         previousTxtN.text += '\n'
       }
-    }else if (hasSameStyles(previousTxtN, txtNode)) {
+    } else if (hasSameStyles(previousTxtN, txtNode)) {
       previousTxtN.text += txtNode.text
-    }else {
+    } else {
       result.push(txtNode)
       previousTxtN = txtNode
     }
@@ -69,66 +75,61 @@ function getDecoredText(node$, doTrimHard = false, initStyles = {bold:false,ital
 function getDecoratedTextFromChildren(parent$, res, currentStyles) {
   const children = parent$.contents()
   if (children.length === 0) {
-    res.push({text: parent$.text(), style:Object.assign({}, currentStyles)})
+    res.push({ text: parent$.text(), style: Object.assign({}, currentStyles) })
     return
   }
-  children.map(function (i, el) {
+  children.map(function(i, el) {
     // console.log(a, b);
     // console.log(this);
-    if (el.nodeType === 8) {return} // HTML comment : skip
+    if (el.nodeType === 8) {
+      return
+    } // HTML comment : skip
     const el$ = Cheerio(el)
 
     if (el.type === 'text') {
-      res.push({text: el$.text(), style:Object.assign({}, currentStyles)})
+      res.push({ text: el$.text(), style: Object.assign({}, currentStyles) })
       return
     }
     const tagName = el$.prop('tagName')
 
-    if ( tagName === 'BR') {
-      res.push({text: '\n'})
+    if (tagName === 'BR') {
+      res.push({ text: '\n' })
       return
-
-    }else if (tagName === 'STRONG') {
+    } else if (tagName === 'STRONG') {
       let newStyles = Object.assign({}, currentStyles)
       newStyles.bold = true
       getDecoratedTextFromChildren(el$, res, newStyles)
-
-    }else if (tagName === 'H3') {
+    } else if (tagName === 'H3') {
       let newStyles = Object.assign({}, currentStyles)
       newStyles.bold = true
       getDecoratedTextFromChildren(el$, res, newStyles)
-
-    }else if (tagName === 'EM') {
+    } else if (tagName === 'EM') {
       let newStyles = Object.assign({}, currentStyles)
       newStyles.italics = true
       getDecoratedTextFromChildren(el$, res, newStyles)
-
-    }else if (tagName === 'A') {
+    } else if (tagName === 'A') {
       let newStyles = Object.assign({}, currentStyles, getStyle('link'))
       newStyles.link = BASE_URL + el$.attr('href')
       getDecoratedTextFromChildren(el$, res, newStyles)
-
-    }else if (tagName === 'LI') {
-      res.push({text: '- '})
-        getDecoratedTextFromChildren(el$, res, currentStyles)
-        res.push({text: '\n'})
-
-    }else {
+    } else if (tagName === 'LI') {
+      res.push({ text: '- ' })
+      getDecoratedTextFromChildren(el$, res, currentStyles)
+      res.push({ text: '\n' })
+    } else {
       if (blocTags.includes(el$.prop('tagName'))) {
-        res.push({text: '\n'})
+        res.push({ text: '\n' })
       }
       getDecoratedTextFromChildren(el$, res, currentStyles)
       if (blocTags.includes(el$.prop('tagName'))) {
-        res.push({text: '\n'})
+        res.push({ text: '\n' })
       }
     }
   })
 }
 
-
-const blocTags       = ['H1', 'H2', 'H3', 'H4', 'P', 'DIV', 'LI', 'OL' ],
-      startSpacesReg = /^[\s\n]+/,
-      endSpacesReg   = /[\s\n]+$/
+const blocTags = ['H1', 'H2', 'H3', 'H4', 'P', 'DIV', 'LI', 'OL'],
+  startSpacesReg = /^[\s\n]+/,
+  endSpacesReg = /[\s\n]+$/
 
 function trimHard(txtNode) {
   trimHardEnd(txtNode)
@@ -142,15 +143,15 @@ function trimHardEnd(txtNode) {
   let hasAReturn = false
   if (typeof txtNode.text === 'string') {
     let match = txtNode.text.match(endSpacesReg)
-    if(match){
+    if (match) {
       let replacement = ''
       if (match[0].match(/\n/)) {
         replacement = '\n'
         hasAReturn = true
-      }else if (match[0].match(/\s/)) {
+      } else if (match[0].match(/\s/)) {
         replacement = ' '
       }
-      txtNode.text = txtNode.text.substr(0,match.index) + replacement
+      txtNode.text = txtNode.text.substr(0, match.index) + replacement
     }
   }
   return hasAReturn
@@ -169,10 +170,10 @@ function hasReturnAndRemoveExtra(txtNode) {
 }
 
 function hasSameStyles(a, b) {
-  if (! a.style) {
+  if (!a.style) {
     a.style = {}
   }
-  if (! b.style) {
+  if (!b.style) {
     b.style = {}
   }
   b = b.style
@@ -184,16 +185,16 @@ function hasSameStyles(a, b) {
   // If number of properties is different,
   // objects are not equivalent
   if (aProps.length != bProps.length) {
-      return false
+    return false
   }
 
   for (let i = 0; i < aProps.length; i++) {
-      const propName = aProps[i]
-      // If values of same property are not equal,
-      // objects are not equivalent
-      if (a[propName] !== b[propName]) {
-          return false
-      }
+    const propName = aProps[i]
+    // If values of same property are not equal,
+    // objects are not equivalent
+    if (a[propName] !== b[propName]) {
+      return false
+    }
   }
   // If we made it this far, objects
   // are considered equivalent

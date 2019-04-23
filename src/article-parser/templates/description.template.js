@@ -1,5 +1,4 @@
-module.exports = function () {
-
+module.exports = function() {
   return {
     style: 'tableHeader',
     table: {
@@ -8,27 +7,27 @@ module.exports = function () {
         [
           {
             // border: [true, true, true, true],
-            text:'Une description'
+            text: 'Une description'
           },
           {
             // border: [true, true, true, true],
-            image:'',
+            image: '',
             width: 100,
-            rowSpan:2
-          }
-        ],[
-          {
-            // border: [true, true, true, true],
-            text:'Une signature',
-            style: 'signature'
+            rowSpan: 2
           }
         ],
+        [
+          {
+            // border: [true, true, true, true],
+            text: 'Une signature',
+            style: 'signature'
+          }
+        ]
       ]
     },
     layout: {
-      defaultBorder: false,
+      defaultBorder: false
     },
     margin: [0, 40, 0, 0] // right, top, left, bottom
   }
-
 }

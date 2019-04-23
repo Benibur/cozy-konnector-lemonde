@@ -1,4 +1,4 @@
-module.exports = function () {
+module.exports = function() {
   return {
     style: 'tableHeader',
     table: {
@@ -6,18 +6,18 @@ module.exports = function () {
       body: [
         [
           {
-            image:'lemondeIcone',
+            image: 'lemondeIcone',
             width: 50
           },
           {
             style: 'H1',
-            text:''
+            text: ''
           }
         ]
       ]
     },
     layout: {
-      defaultBorder: false,
+      defaultBorder: false
     }
   }
 }
