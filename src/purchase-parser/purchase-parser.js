@@ -90,5 +90,6 @@ module.exports = $ => {
   // log('debug', 'in the end of purchase parser, purchases are :');
   // log('debug', ar);
 
-  return ar
+  return Promise.resolve(ar)
+  // return ar
 }
